@@ -69,14 +69,15 @@ class GnipSearchAPI:
         self.options = self.args().parse_args()
         # set up the job
         # over ride config file with command line args if present
+        # stream options
         if self.options.user is not None:
             self.user = self.options.user
         if self.options.password is not None:
             self.password = self.options.password
         if self.options.stream_url is not None:
             self.stream_url = self.options.stream_url
-        #
         #############################################
+        # usecase options
         if self.options.use_case.startswith("links"):
             char_upper_cutoff=100
             space_tokenizer = True
@@ -95,6 +96,8 @@ class GnipSearchAPI:
             if self.options.count_bucket not in ['day', 'minute', 'hour']:
                 print >> sys.stderr, "Error. Invalid count bucket: %s \n"%str(self.options.count_bucket)
                 sys.exit()
+        #############################################
+        # time window options
         if self.options.start:
             dt = re.search(timeRE, self.options.start)
             if not dt:
@@ -115,24 +118,14 @@ class GnipSearchAPI:
                 for i in range(re.compile(timeRE).groups):
                     e += dt.group(i+1) 
                 self.toDate = e
-        self.name_munger(self.options.filter)
+        #############################################
+        # rules ==> filenames options
+        self.filter = self.get_filter()
+        self.name_munger( self.filter )
+        #############################################
         # get a parser for the twitter columns
         # TODO: use the updated retriveal methods in gnacs instead of this
         self.twitter_parser = TwacsCSV(",", None, False, True, False, True, False, False, False)
-
-    def config_file(self):
-        config = ConfigParser.ConfigParser()
-        # (1) default file name precidence
-        config.read(DEFAULT_CONFIG_FILENAME)
-        if not config.has_section("creds"):
-            # (2) environment variable file name second
-            if 'GNIP_CONFIG_FILE' in os.environ:
-                config_filename = os.environ['GNIP_CONFIG_FILE']
-                config.read(config_filename)
-        if config.has_section("creds") and config.has_section("endpoint"):
-            return config
-        else:
-            return None
 
     def args(self):
         twitter_parser = argparse.ArgumentParser(
@@ -150,7 +143,7 @@ class GnipSearchAPI:
         twitter_parser.add_argument("-e", "--end-date", dest="end", 
                 default=None,
                 help="End of datetime window, format 'YYYY-mm-DDTHH:MM' (default: most recent activities)")
-        twitter_parser.add_argument("-f", "--filter", dest="filter", default="from:jrmontag OR from:gnip",
+        twitter_parser.add_argument("-f", "--filter", dest="filter", default="",
                 help="PowerTrack filter rule (See: http://support.gnip.com/customer/portal/articles/901152-powertrack-operators)")
         twitter_parser.add_argument("-l", "--stream-url", dest="stream_url", 
                 default=None,
@@ -169,7 +162,7 @@ class GnipSearchAPI:
         twitter_parser.add_argument("-w", "--output-file-path", dest="output_file_path", default=None,
                 help="Create files in ./OUTPUT-FILE-PATH. This path must exists and will not be created. This options is available only with -a option. Default is no output files.")
         return twitter_parser
-    
+
     def name_munger(self, f):
         """Creates a file name per input rule when reading multiple input rules."""
         f = re.sub(' +','_',f)
@@ -178,6 +171,45 @@ class GnipSearchAPI:
         f = f.replace('(','_p_') 
         f = f.replace(')','_p_') 
         self.file_name_prefix = f[:42]
+
+    def config_file(self):
+        config = ConfigParser.ConfigParser()
+        # (1) default file name precidence
+        config.read(DEFAULT_CONFIG_FILENAME)
+        if not config.has_section("creds"):
+            # (2) environment variable file name second
+            if 'GNIP_CONFIG_FILE' in os.environ:
+                config_filename = os.environ['GNIP_CONFIG_FILE']
+                config.read(config_filename)
+        if config.has_section("creds") and config.has_section("endpoint"):
+            return config
+        else:
+            return None
+
+    def get_filter(self):
+        """
+        Determine if the rules are coming from a file or cmd-line args, and return the appropriate 
+        rules string (or exit if no rules found).
+        """ 
+        request_filter = ""
+        if self.options.filter != "":
+            # rules specified on cmd-line
+            request_filter = self.options.filter
+        else:
+            # look for a file destination in the config 
+            print >>sys.stderr, "Looking for rules file location in configuration..."
+            cfg = self.config_file() 
+            try:
+                rules_file = cfg.get('defaults', 'rules')
+            except ( ConfigParser.NoOptionError, ConfigParser.NoSectionError ) as e: 
+                print >>sys.stderr, "Error reading configuration file ({}), no rules found.".format(e)
+                sys.exit()
+            # read the rules
+            with open( rules_file, 'rb') as f:
+                # n.b: specific to Search API: assumes one line in the file, valid PowerTrack rule 
+                payload = json.load( f )  
+                request_filter = payload['rules'][0]['value']
+        return request_filter 
 
     def req(self):
         try:
@@ -208,6 +240,7 @@ class GnipSearchAPI:
                     print >> sys.stderr, "Query: %s"%self.rule_payload
                     print >> sys.stderr, "Response: %s"%doc
             except ValueError:
+                # invalid json
                 print >> sys.stderr, "Error, results not parsable"
                 print >> sys.stderr, doc
                 sys.exit()
@@ -226,6 +259,7 @@ class GnipSearchAPI:
                                 out.write(json.dumps(item)+"\n")
                     else:
                         # if writing to file, don't keep track of all the data in memory
+                        #TODO: if using -a (paged) flag, this prevents data from going to stdout
                         acs = []
                 else:
                     print >> sys.stderr, "no results returned for rule:{0}".format(str(self.rule_payload))
@@ -246,7 +280,7 @@ class GnipSearchAPI:
             # avoid making many small requests
             self.options.max = 500
         self.rule_payload = {
-                                'query': self.options.filter
+                                'query': self.filter
                          , 'maxResults': int(self.options.max)
                           , 'publisher': 'twitter'
                             }
@@ -335,7 +369,8 @@ class GnipSearchAPI:
             res.append("%22s -- %10s     %8s (%d)"%( "terms", "mentions", "activities", self.res_cnt))
             res.append("-"*WIDTH)
             for x in self.freq.get_tokens(self.token_list_size):
-                res.append("%22s -- %4d  %5.2f%% %4d  %5.2f%%"%(x[4], x[0], x[1]*100., x[2], x[3]*100.))
+                #res.append("%22s -- %4d  %5.2f%% %4d  %5.2f%%"%(x[4], x[0], x[1]*100., x[2], x[3]*100.))
+                res.append(u"%22s -- %4d  %5.2f%% %4d  %5.2f%%"%(x[4], x[0], x[1]*100., x[2], x[3]*100.))
             res.append("-"*WIDTH)
         elif self.options.use_case.startswith("time"):
             if self.options.csv_flag:
@@ -353,7 +388,12 @@ class GnipSearchAPI:
             for x in self.freq.get_tokens(self.token_list_size):
                 res.append("%100s -- %4d  %5.2f%% %4d  %5.2f%%"%(x[4], x[0], x[1]*100., x[2], x[3]*100.))
             res.append("-"*WIDTH)
-        return "\n".join(res)
+        if self.options.output_file_path:
+            # no need to return all the data to stdout 
+            res = ["Result files written to path={}".format(self.options.output_file_path)] 
+        #return "\n".join(res)
+        return u"\n".join(res)
 
 if __name__ == "__main__":
+    #print u"{}".format( GnipSearchAPI()().get_repr() )
     print GnipSearchAPI()().get_repr()

@@ -12,7 +12,8 @@ pwd = <password>
 url = https://search.gnip.com/accounts/shendrickson/search/wayback.json
 
 [defaults]
-# none
+# e.g.
+# rules = ./rules.json 
 
 [tmp]
 # none

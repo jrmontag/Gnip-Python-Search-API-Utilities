@@ -1,14 +1,11 @@
 Gnip Python Search API Utilities
 ================================
 
-
-This package includes two utilities:
- - Simple Gnip Search API interactions
- - Paging back to 30 days for 1 or more filters (WARNING: this will make many API requests very quickly!)
+*Add better short description here... no more 2x utilities*
 
 
 #### Installation
-Install from PyPI with `pip install gapi`
+Install from [PyPI](https://pypi.python.org/pypi/gapi) with `pip install gapi`
 
 ## Search API
 
@@ -59,9 +56,9 @@ Usage:
                             files.
 
 
-##Using a configuration file
+## Using a configuration file
 
-To avoid entering the the -u, -p and -l options for every command, create a configuration file name ".gnip" 
+To avoid entering the the -u, -p, -l, and -f options for every command, create a configuration file name ".gnip" 
 in the directory where you will run the code. If this file contains the correct parameters, you can omit
 this command line parameters.
 
@@ -76,6 +73,10 @@ Use this template:
     [endpoint]
     # replace with your endpoint
     url = https://search.gnip.com/accounts/shendrickson/search/wayback.json
+
+    [defaults]
+    # e.g. rules file (JSON, PowerTrack format)
+    #rules = ./rules.json 
 
 ### Use cases
 
