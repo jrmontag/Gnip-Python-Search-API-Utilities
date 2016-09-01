@@ -198,7 +198,7 @@ class Query(object):
     def get_time_series(self):
         if self.paged and self.output_file_path is not None:
             for file_name in self.paged_file_list:
-                with codecs.open(file_name,"rb") as f:
+                with codecs.open(file_name,"r") as f:
                     for res in f:
                         rec = json.loads(res.strip())
                         t = datetime.datetime.strptime(rec["timePeriod"], TIME_FORMAT_SHORT)
@@ -216,7 +216,7 @@ class Query(object):
         """Generator iterates through the entire activity set from memory or disk."""
         if self.paged and self.output_file_path is not None:
             for file_name in self.paged_file_list:
-                with codecs.open(file_name,"rb") as f:
+                with codecs.open(file_name,"r") as f:
                     for res in f:
                         yield json.loads(res)
         else:
